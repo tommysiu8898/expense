@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Add Entry</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 p-4">
+    <div class="max-w-md mx-auto">
+        <button onclick="window.location.href='index.html'" class="text-indigo-600 font-bold mb-6 flex items-center">
+            ← Back to Dashboard
+        </button>
+
+        <h1 class="text-2xl font-bold mb-6">Add New Entry</h1>
+
+        <div class="flex bg-gray-200 p-1 rounded-xl mb-8">
+            <button onclick="setType('expense')" id="btn-expense" class="flex-1 py-2 rounded-lg font-bold text-sm bg-white shadow-sm">Expense</button>
+            <button onclick="setType('income')" id="btn-income" class="flex-1 py-2 rounded-lg font-bold text-sm text-gray-500">Income</button>
+            <button onclick="setType('credit_cards')" id="btn-cards" class="flex-1 py-2 rounded-lg font-bold text-sm text-gray-500">Card Bill</button>
+        </div>
+
+        <form id="entry-form" class="space-y-6">
+            <div>
+                <label id="label-amt" class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Amount (HK$)</label>
+                <input type="number" id="amt" step="0.01" required class="w-full p-4 bg-white rounded-2xl shadow-sm border-0 focus:ring-2 focus:ring-indigo-500 text-xl">
+            </div>
+
+            <div>
+                <label id="label-cat" class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Category / Item Name</label>
+                <input type="text" id="cat" required placeholder="e.g. Food, Salary, MOX Card" class="w-full p-4 bg-white rounded-2xl shadow-sm border-0 focus:ring-2 focus:ring-indigo-500">
+            </div>
+
+            <div id="status-group" class="hidden">
+                <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Payment Status</label>
+                <select id="status" class="w-full p-4 bg-white rounded-2xl shadow-sm border-0 focus:ring-2 focus:ring-indigo-500">
+                    <option value="未還款">未還款 (Unpaid)</option>
+                    <option value="已還款">已還款 (Paid)</option>
+                </select>
+            </div>
+
+            <div>
+                <label id="label-desc" class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Notes / Who Paid</label>
+                <input type="text" id="desc" class="w-full p-4 bg-white rounded-2xl shadow-sm border-0 focus:ring-2 focus:ring-indigo-500">
+            </div>
+
+            <button type="submit" id="save-btn" class="w-full bg-indigo-600 text-white font-bold py-4 rounded-2xl shadow-lg hover:bg-indigo-700 transition-all active:scale-95">
+                Save to Supabase
+            </button>
+        </form>
+    </div>
+
+    <script>
+        const S_URL = 'https://apwgdjzwhnwjdbonaway.supabase.co';
+        const S_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFwd2dkanp3aG53amRib25hd2F5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU0MzY2MjcsImV4cCI6MjA5MTAxMjYyN30._ZBC_NKIaUNQgzE2A4U3uw7cLy2_O6eshif7LzcIfLg';
+        const _db = supabase.createClient(S_URL, S_KEY);
+
+        let currentType = 'expense';
+
+        function setType(type) {
+            currentType = type;
+            const btns = { expense: 'btn-expense', income: 'btn-income', credit_cards: 'btn-cards' };
+            
+            // UI Toggle
+            Object.keys(btns).forEach(key => {
+                const b = document.getElementById(btns[key]);
+                if (key === type) {
+                    b.classList.replace('text-gray-500', 'bg-white');
+                    b.classList.add('shadow-sm');
+                } else {
+                    b.classList.replace('bg-white', 'text-gray-500');
+                    b.classList.remove('shadow-sm');
+                }
+            });
+
+            // Show/Hide Fields
+            document.getElementById('status-group').classList.toggle('hidden', type !== 'credit_cards');
+            document.getElementById('label-amt').innerText = type === 'credit_cards' ? 'Bill Amount' : 'Amount (HK$)';
+            document.getElementById('label-cat').innerText = type === 'credit_cards' ? 'Card Name' : 'Category';
+        }
+
+        document.getElementById('entry-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('save-btn');
+            btn.disabled = true;
+            btn.innerText = 'Syncing...';
+
+            let payload = {};
+            if (currentType === 'expense') {
+                payload = { amount: document.getElementById('amt').value, category: document.getElementById('cat').value, currency: document.getElementById('desc').value };
+            } else if (currentType === 'income') {
+                payload = { amount: document.getElementById('amt').value, category: document.getElementById('cat').value, description: document.getElementById('desc').value };
+            } else {
+                payload = { bill_amount: document.getElementById('amt').value, card_name: document.getElementById('cat').value, status: document.getElementById('status').value };
+            }
+
+            const { error } = await _db.from(currentType).insert([payload]);
+
+            if (error) {
+                alert("Error: " + error.message);
+                btn.disabled = false;
+                btn.innerText = 'Save to Supabase';
+            } else {
+                window.location.href = 'index.html'; // Go back to dashboard to see the update
+            }
+        });
+    </script>
+</body>
+</html>
