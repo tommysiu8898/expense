@@ -28,8 +28,8 @@
             </div>
 
             <div>
-                <label id="label-cat" class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Category / Item Name</label>
-                <input type="text" id="cat" required placeholder="e.g. Food, Salary, MOX Card" class="w-full p-4 bg-white rounded-2xl shadow-sm border-0 focus:ring-2 focus:ring-indigo-500">
+                <label id="label-cat" class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Category / Card Name</label>
+                <input type="text" id="cat" required placeholder="e.g. Food, Salary, MOX" class="w-full p-4 bg-white rounded-2xl shadow-sm border-0 focus:ring-2 focus:ring-indigo-500">
             </div>
 
             <div id="status-group" class="hidden">
@@ -41,12 +41,12 @@
             </div>
 
             <div>
-                <label id="label-desc" class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Notes / Who Paid</label>
+                <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Notes / Description</label>
                 <input type="text" id="desc" class="w-full p-4 bg-white rounded-2xl shadow-sm border-0 focus:ring-2 focus:ring-indigo-500">
             </div>
 
-            <button type="submit" id="save-btn" class="w-full bg-indigo-600 text-white font-bold py-4 rounded-2xl shadow-lg hover:bg-indigo-700 transition-all active:scale-95">
-                Save to Supabase
+            <button type="submit" id="save-btn" class="w-full bg-indigo-600 text-white font-bold py-4 rounded-2xl shadow-lg hover:bg-indigo-700 active:scale-95 transition-all">
+                Save Entry
             </button>
         </form>
     </div>
@@ -61,30 +61,20 @@
         function setType(type) {
             currentType = type;
             const btns = { expense: 'btn-expense', income: 'btn-income', credit_cards: 'btn-cards' };
-            
-            // UI Toggle
             Object.keys(btns).forEach(key => {
                 const b = document.getElementById(btns[key]);
-                if (key === type) {
-                    b.classList.replace('text-gray-500', 'bg-white');
-                    b.classList.add('shadow-sm');
-                } else {
-                    b.classList.replace('bg-white', 'text-gray-500');
-                    b.classList.remove('shadow-sm');
-                }
+                if (key === type) { b.classList.replace('text-gray-500', 'bg-white'); b.classList.add('shadow-sm'); }
+                else { b.classList.replace('bg-white', 'text-gray-500'); b.classList.remove('shadow-sm'); }
             });
-
-            // Show/Hide Fields
             document.getElementById('status-group').classList.toggle('hidden', type !== 'credit_cards');
             document.getElementById('label-amt').innerText = type === 'credit_cards' ? 'Bill Amount' : 'Amount (HK$)';
-            document.getElementById('label-cat').innerText = type === 'credit_cards' ? 'Card Name' : 'Category';
         }
 
         document.getElementById('entry-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             const btn = document.getElementById('save-btn');
             btn.disabled = true;
-            btn.innerText = 'Syncing...';
+            btn.innerText = 'Saving...';
 
             let payload = {};
             if (currentType === 'expense') {
@@ -96,13 +86,12 @@
             }
 
             const { error } = await _db.from(currentType).insert([payload]);
-
             if (error) {
                 alert("Error: " + error.message);
                 btn.disabled = false;
-                btn.innerText = 'Save to Supabase';
+                btn.innerText = 'Save Entry';
             } else {
-                window.location.href = 'index.html'; // Go back to dashboard to see the update
+                window.location.href = 'index.html';
             }
         });
     </script>
