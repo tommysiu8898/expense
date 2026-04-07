@@ -7,53 +7,22 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { background-color: #f3f4f6; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-        .glass-card { background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.3); }
-        .section-header { border-left: 4px solid #2563eb; padding-left: 10px; margin: 20px 0 10px 0; font-weight: bold; color: #1e40af; }
+        body { background-color: #f3f4f6; font-family: -apple-system, sans-serif; }
+        .glass-card { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.3); }
+        .section-header { border-left: 4px solid #2563eb; padding-left: 10px; margin: 20px 0 10px 0; font-weight: bold; color: #1e40af; font-size: 0.8rem; letter-spacing: 0.05em; }
+        /* Modal Animation */
+        #form-modal { transition: opacity 0.3s ease, visibility 0.3s; }
+        #form-modal.hidden { opacity: 0; visibility: hidden; display: none; }
     </style>
 </head>
-<body class="pb-20">
+<body class="pb-32">
 
-    <div class="bg-blue-600 text-white p-8 rounded-b-3xl shadow-lg mb-6 text-center">
-        <h1 class="text-sm opacity-80 uppercase tracking-widest font-bold">Monthly Summary</h1>
-        <p id="total-amount" class="text-4xl font-bold mt-2 text-white">HK$ 0.00</p>
+    <div class="bg-blue-600 text-white p-8 rounded-b-3xl shadow-lg mb-6 sticky top-0 z-10 text-center">
+        <h1 class="text-xs opacity-80 uppercase tracking-widest font-bold">Net Balance</h1>
+        <p id="total-amount" class="text-4xl font-bold mt-1 text-white">HK$ 0.00</p>
     </div>
 
     <div class="max-w-2xl mx-auto px-4">
-        <div class="glass-card p-6 rounded-2xl shadow-sm mb-8">
-            <h2 class="text-lg font-bold mb-4 text-gray-800">Add New Record</h2>
-            <form id="expense-form" class="space-y-4">
-                <input type="hidden" id="edit-id">
-                <div class="grid grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-xs font-semibold text-gray-500 mb-1">TYPE</label>
-                        <select id="record-type" class="w-full p-3 rounded-xl ring-1 ring-gray-200 outline-none bg-white">
-                            <option value="Expense">Expense</option>
-                            <option value="Credit Card">Credit Card</option>
-                            <option value="Income">Income</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="block text-xs font-semibold text-gray-500 mb-1">AMOUNT (HKD)</label>
-                        <input type="number" id="amount" step="0.01" required placeholder="0.00" class="w-full p-3 rounded-xl ring-1 ring-gray-200 outline-none">
-                    </div>
-                </div>
-                <div class="grid grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-xs font-semibold text-gray-500 mb-1">CATEGORY</label>
-                        <input type="text" id="category" placeholder="e.g. Food" class="w-full p-3 rounded-xl ring-1 ring-gray-200 outline-none">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-semibold text-gray-500 mb-1">SPENDER/SOURCE</label>
-                        <input type="text" id="spender" placeholder="Name" class="w-full p-3 rounded-xl ring-1 ring-gray-200 outline-none">
-                    </div>
-                </div>
-                <button type="submit" id="submit-btn" class="w-full bg-blue-600 text-white font-bold py-3 rounded-xl shadow-md active:scale-95 transition-all">
-                    Save Record
-                </button>
-            </form>
-        </div>
-
         <div id="expense-sections">
             <div class="section-header">EXPENSES</div>
             <div id="list-Expense" class="space-y-2 mb-6 text-sm text-gray-400 italic">No expense records.</div>
@@ -66,21 +35,73 @@
         </div>
     </div>
 
+    <div class="fixed bottom-8 left-0 right-0 flex justify-center z-50">
+        <button onclick="toggleModal()" class="bg-blue-600 text-white w-16 h-16 rounded-full shadow-2xl flex items-center justify-center text-3xl font-bold active:scale-90 transition-transform">
+            +
+        </button>
+    </div>
+
+    <div id="form-modal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-end sm:items-center justify-center p-4">
+        <div class="glass-card w-full max-w-md p-6 rounded-t-3xl sm:rounded-2xl shadow-2xl animate-slide-up">
+            <div class="flex justify-between items-center mb-6">
+                <h2 id="modal-title" class="text-xl font-bold text-gray-800">New Record</h2>
+                <button onclick="toggleModal()" class="text-gray-400 text-2xl">&times;</button>
+            </div>
+            
+            <form id="expense-form" class="space-y-4">
+                <input type="hidden" id="edit-id">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-500 mb-1 tracking-wider">TYPE</label>
+                        <select id="record-type" class="w-full p-3 rounded-xl ring-1 ring-gray-200 bg-white">
+                            <option value="Expense">Expense</option>
+                            <option value="Credit Card">Credit Card</option>
+                            <option value="Income">Income</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-500 mb-1 tracking-wider">AMOUNT (HKD)</label>
+                        <input type="number" id="amount" step="0.01" required placeholder="0.00" class="w-full p-3 rounded-xl ring-1 ring-gray-200">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-500 mb-1 tracking-wider">CATEGORY</label>
+                        <input type="text" id="category" placeholder="e.g. Food" class="w-full p-3 rounded-xl ring-1 ring-gray-200">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-500 mb-1 tracking-wider">NAME</label>
+                        <input type="text" id="spender" placeholder="Who paid?" class="w-full p-3 rounded-xl ring-1 ring-gray-200">
+                    </div>
+                </div>
+                <button type="submit" id="submit-btn" class="w-full bg-blue-600 text-white font-bold py-4 rounded-xl shadow-md mt-2">
+                    Save Record
+                </button>
+            </form>
+        </div>
+    </div>
+
     <script>
         const SUPABASE_URL = 'https://apwgdjzwhnwjdbonaway.supabase.co';
         const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFwd2dkanp3aG53amRib25hd2F5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU0MzY2MjcsImV4cCI6MjA5MTAxMjYyN30._ZBC_NKIaUNQgzE2A4U3uw7cLy2_O6eshif7LzcIfLg';
         const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
         const form = document.getElementById('expense-form');
+        const modal = document.getElementById('form-modal');
         const totalDisplay = document.getElementById('total-amount');
 
-        async function fetchRecords() {
-            const { data, error } = await supabaseClient
-                .from('expenses')
-                .select('*')
-                .order('created_at', { ascending: false });
+        function toggleModal() {
+            modal.classList.toggle('hidden');
+            if(modal.classList.contains('hidden')) {
+                form.reset();
+                document.getElementById('edit-id').value = '';
+                document.getElementById('modal-title').innerText = 'New Record';
+            }
+        }
 
-            if (error) { console.error(error); return; }
+        async function fetchRecords() {
+            const { data, error } = await supabaseClient.from('expenses').select('*').order('created_at', { ascending: false });
+            if (error) return;
             renderList(data);
         }
 
@@ -90,11 +111,11 @@
 
             types.forEach(type => {
                 const container = document.getElementById(`list-${type}`);
+                container.innerHTML = '';
                 const filtered = records.filter(r => r.type === type || (!r.type && type === 'Expense'));
                 
-                if (filtered.length > 0) {
-                    container.innerHTML = '';
-                    container.classList.remove('italic', 'text-gray-400');
+                if (filtered.length === 0) {
+                    container.innerHTML = `<p class="italic text-gray-400">No ${type.toLowerCase()} records.</p>`;
                 }
 
                 filtered.forEach(item => {
@@ -103,17 +124,17 @@
                     else totalBalance -= amt;
 
                     const div = document.createElement('div');
-                    div.className = 'glass-card p-4 rounded-xl flex justify-between items-center shadow-sm border-l-4 ' + (type === 'Income' ? 'border-green-500' : 'border-blue-500');
+                    div.className = 'glass-card p-4 rounded-xl flex justify-between items-center shadow-sm mb-2';
                     div.innerHTML = `
                         <div class="flex-1">
-                            <p class="font-bold text-gray-800">${item.category || 'General'} <span class="text-xs font-normal text-gray-400 ml-2">${new Date(item.created_at).toLocaleDateString()}</span></p>
-                            <p class="text-xs text-gray-500">${item.spender || 'Family'}</p>
+                            <p class="font-bold text-gray-800">${item.category || 'General'}</p>
+                            <p class="text-[10px] text-gray-400 uppercase tracking-tight">${new Date(item.created_at).toLocaleDateString()} • ${item.spender || 'Family'}</p>
                         </div>
-                        <div class="text-right flex items-center gap-4">
+                        <div class="text-right flex items-center gap-3">
                             <p class="font-bold ${type === 'Income' ? 'text-green-600' : 'text-gray-800'}">HK$ ${amt.toFixed(2)}</p>
-                            <div class="flex gap-2">
-                                <button onclick="editRecord('${item.id}', '${item.type}', ${amt}, '${item.category}', '${item.spender}')" class="text-blue-500 text-xs font-bold uppercase">Edit</button>
-                                <button onclick="deleteRecord('${item.id}')" class="text-red-500 text-xs font-bold uppercase">Del</button>
+                            <div class="flex gap-1">
+                                <button onclick="editRecord('${item.id}', '${item.type}', ${amt}, '${item.category}', '${item.spender}')" class="p-2 text-blue-500">✎</button>
+                                <button onclick="deleteRecord('${item.id}')" class="p-2 text-red-400">✕</button>
                             </div>
                         </div>
                     `;
@@ -133,38 +154,29 @@
                 spender: document.getElementById('spender').value
             };
 
-            let res;
-            if (id) {
-                res = await supabaseClient.from('expenses').update(payload).eq('id', id);
-            } else {
-                res = await supabaseClient.from('expenses').insert([payload]);
-            }
+            if (id) await supabaseClient.from('expenses').update(payload).eq('id', id);
+            else await supabaseClient.from('expenses').insert([payload]);
 
-            if (res.error) alert(res.error.message);
-            else {
-                form.reset();
-                document.getElementById('edit-id').value = '';
-                document.getElementById('submit-btn').innerText = 'Save Record';
-                fetchRecords();
-            }
+            toggleModal();
+            fetchRecords();
         });
 
         async function deleteRecord(id) {
             if (confirm('Delete this record?')) {
-                const { error } = await supabaseClient.from('expenses').delete().eq('id', id);
-                if (error) alert(error.message);
-                else fetchRecords();
+                await supabaseClient.from('expenses').delete().eq('id', id);
+                fetchRecords();
             }
         }
 
         function editRecord(id, type, amount, category, spender) {
+            toggleModal();
+            document.getElementById('modal-title').innerText = 'Edit Record';
             document.getElementById('edit-id').value = id;
             document.getElementById('record-type').value = type || 'Expense';
             document.getElementById('amount').value = amount;
             document.getElementById('category').value = category;
             document.getElementById('spender').value = spender;
             document.getElementById('submit-btn').innerText = 'Update Record';
-            window.scrollTo({ top: 0, behavior: 'smooth' });
         }
 
         fetchRecords();
