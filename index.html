@@ -8,10 +8,9 @@
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-50 pb-24">
-
     <div class="bg-indigo-700 text-white p-6 rounded-b-[2.5rem] shadow-lg mb-6">
         <div class="flex justify-between items-center mb-4">
-            <h1 id="month-title" class="text-2xl font-bold text-white">April 2026</h1>
+            <h1 id="month-title" class="text-2xl font-bold text-white">Loading...</h1>
             <button onclick="showMonthPicker()" class="bg-white/20 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider text-white">Change Month</button>
         </div>
         
@@ -25,39 +24,35 @@
                 <p id="stat-expense" class="text-sm font-bold text-red-200 font-mono">HK$ 0</p>
             </div>
             <div class="bg-indigo-500 p-3 rounded-2xl border border-white/30">
-                <p class="text-[10px] uppercase font-bold text-white">Net Savings</p>
+                <p class="text-[10px] uppercase font-bold text-white">Savings</p>
                 <p id="stat-savings" class="text-sm font-bold text-white font-mono">HK$ 0</p>
             </div>
         </div>
     </div>
 
     <div class="px-4 space-y-6">
-        
         <section>
-            <h2 class="text-xs font-bold text-gray-400 uppercase mb-3 px-1">Credit Card Repayment</h2>
-            <div id="card-list" class="space-y-2">
-                </div>
+            <h2 class="text-xs font-bold text-gray-400 uppercase mb-3 px-1">Credit Card Bills</h2>
+            <div id="card-list" class="space-y-2"></div>
         </section>
 
         <section>
             <h2 class="text-xs font-bold text-gray-400 uppercase mb-3 px-1">Spending by Category</h2>
-            <div id="category-summary" class="bg-white rounded-3xl p-4 shadow-sm border border-gray-100">
-                </div>
+            <div id="category-summary" class="bg-white rounded-3xl p-4 shadow-sm border border-gray-100"></div>
         </section>
-
     </div>
 
     <div id="month-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden z-50 flex items-center justify-center p-6">
-        <div class="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl">
-            <h3 class="text-center font-bold text-gray-800 mb-4">Select Month</h3>
+        <div class="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl text-center">
+            <h3 class="font-bold text-gray-800 mb-4">Select Month</h3>
             <div class="grid grid-cols-3 gap-3" id="month-grid"></div>
         </div>
     </div>
 
     <div class="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-md border-t p-4 flex justify-around items-center">
-        <button onclick="location.reload()" class="text-indigo-600 font-bold text-[10px] uppercase">Dashboard</button>
+        <button onclick="location.reload()" class="text-indigo-600 font-bold text-[10px] uppercase tracking-wider">Dashboard</button>
         <button onclick="window.location.href='add.html'" class="bg-indigo-600 text-white w-14 h-14 rounded-full -mt-10 border-[6px] border-gray-50 flex items-center justify-center shadow-lg text-2xl font-bold">+</button>
-        <button class="text-gray-400 font-bold text-[10px] uppercase">Settings</button>
+        <button onclick="alert('Analysis feature coming soon!')" class="text-gray-400 font-bold text-[10px] uppercase tracking-wider">Analysis</button>
     </div>
 
     <script>
@@ -65,7 +60,7 @@
         const S_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFwd2dkanp3aG53amRib25hd2F5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU0MzY2MjcsImV4cCI6MjA5MTAxMjYyN30._ZBC_NKIaUNQgzE2A4U3uw7cLy2_O6eshif7LzcIfLg';
         const _db = supabase.createClient(S_URL, S_KEY);
 
-        let currentMonth = new Date().getMonth(); 
+        let currentMonth = new Date().getMonth();
         const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
         async function loadDashboard(mIndex) {
@@ -73,50 +68,52 @@
             document.getElementById('month-title').innerText = `${monthNames[mIndex]} 2026`;
             document.getElementById('month-modal').classList.add('hidden');
 
-            // 1. Fetch Income
-            const { data: inc } = await _db.from('income').select('amount');
-            const totalInc = inc ? inc.reduce((acc, row) => acc + Number(row.amount), 0) : 0;
+            const firstDay = new Date(2026, mIndex, 1).toISOString();
+            const lastDay = new Date(2026, mIndex + 1, 0, 23, 59, 59).toISOString();
 
-            // 2. Fetch Expenses
-            const { data: exp } = await _db.from('expense').select('amount, category');
-            const totalExp = exp ? exp.reduce((acc, row) => acc + Number(row.amount), 0) : 0;
+            const [ {data: inc}, {data: exp}, {data: cards} ] = await Promise.all([
+                _db.from('income').select('*').gte('created_at', firstDay).lte('created_at', lastDay),
+                _db.from('expense').select('*').gte('created_at', firstDay).lte('created_at', lastDay),
+                _db.from('credit_cards').select('*').gte('created_at', firstDay).lte('created_at', lastDay)
+            ]);
 
-            // 3. Update Savings Header
+            const totalInc = inc ? inc.reduce((s, r) => s + Number(r.amount), 0) : 0;
+            const totalExp = exp ? exp.reduce((s, r) => s + Number(r.amount), 0) : 0;
+
             document.getElementById('stat-income').innerText = `HK$ ${totalInc.toLocaleString()}`;
             document.getElementById('stat-expense').innerText = `HK$ ${totalExp.toLocaleString()}`;
             document.getElementById('stat-savings').innerText = `HK$ ${(totalInc - totalExp).toLocaleString()}`;
 
-            // 4. Update Credit Cards
-            const { data: cards } = await _db.from('credit_cards').select('*');
             const cardContainer = document.getElementById('card-list');
-            if (cards && cards.length > 0) {
-                cardContainer.innerHTML = cards.map(c => `
-                    <div class="bg-white p-4 rounded-2xl flex justify-between items-center shadow-sm border border-gray-100">
-                        <div>
-                            <p class="font-bold text-gray-800 text-sm">${c.card_name}</p>
-                            <p class="text-[10px] ${c.status === '已還款' ? 'text-green-500' : 'text-red-500'} font-bold uppercase">${c.status}</p>
-                        </div>
-                        <p class="font-bold text-gray-700 text-sm">HK$ ${Number(c.bill_amount).toLocaleString()}</p>
+            cardContainer.innerHTML = (cards && cards.length > 0) ? cards.map(c => `
+                <div class="bg-white p-4 rounded-2xl flex justify-between items-center shadow-sm border border-gray-100">
+                    <div class="flex-1">
+                        <p class="font-bold text-gray-800 text-sm">${c.card_name}</p>
+                        <p class="text-[10px] ${c.status === '已還款' ? 'text-green-500' : 'text-red-500'} font-bold uppercase">${c.status}</p>
                     </div>
-                `).join('');
-            } else {
-                cardContainer.innerHTML = '<p class="text-center text-gray-400 text-xs py-4 italic">No bills recorded</p>';
-            }
+                    <div class="flex items-center gap-3">
+                        <p class="font-bold text-gray-700 text-sm">HK$ ${Number(c.bill_amount).toLocaleString()}</p>
+                        <button onclick="deleteEntry('credit_cards', '${c.id}')" class="text-red-400 p-1">✕</button>
+                    </div>
+                </div>
+            `).join('') : '<p class="text-center text-gray-400 text-xs py-4 italic">No bills this month</p>';
 
-            // 5. Update Category Summary
             const cats = {};
             if (exp) exp.forEach(e => cats[e.category] = (cats[e.category] || 0) + Number(e.amount));
-            
             const summaryDiv = document.getElementById('category-summary');
-            if (Object.keys(cats).length > 0) {
-                summaryDiv.innerHTML = Object.entries(cats).map(([name, val]) => `
-                    <div class="flex justify-between items-center py-2 border-b last:border-0 border-gray-50 text-sm">
-                        <span class="text-gray-600 font-medium">${name}</span>
-                        <span class="font-bold text-indigo-600">HK$ ${val.toLocaleString()}</span>
-                    </div>
-                `).join('');
-            } else {
-                summaryDiv.innerHTML = '<p class="text-center text-gray-400 text-xs py-2 italic">No spending yet</p>';
+            summaryDiv.innerHTML = Object.keys(cats).length > 0 ? Object.entries(cats).map(([name, val]) => `
+                <div class="flex justify-between items-center py-2 border-b last:border-0 border-gray-50 text-sm">
+                    <span class="text-gray-600 font-medium">${name}</span>
+                    <span class="font-bold text-indigo-600">HK$ ${val.toLocaleString()}</span>
+                </div>
+            `).join('') : '<p class="text-center text-gray-400 text-xs py-2 italic">No spending yet</p>';
+        }
+
+        async function deleteEntry(table, id) {
+            if (confirm("Delete this entry?")) {
+                const { error } = await _db.from(table).delete().eq('id', id);
+                if (error) alert(error.message);
+                else loadDashboard(currentMonth);
             }
         }
 
@@ -128,7 +125,6 @@
             document.getElementById('month-modal').classList.remove('hidden');
         }
 
-        // Initialize
         loadDashboard(currentMonth);
     </script>
 </body>
