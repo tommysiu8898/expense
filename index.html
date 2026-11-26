@@ -24,11 +24,14 @@
 
     <div class="max-w-2xl mx-auto px-4">
         <div id="expense-sections">
-            <div class="section-header">EXPENSES</div>
             <div id="load-error" class="hidden mb-4 p-3 rounded-xl bg-red-50 text-red-600 text-sm"></div>
+            <div class="section-header">EXPENSES</div>
             <div id="list-Expense" class="space-y-2 mb-6 text-sm text-gray-400 italic">No expense records.</div>
 
-            <div class="section-header">CREDIT CARDS</div>
+            <div class="section-header flex justify-between items-center pr-1">
+                <span>CREDIT CARDS</span>
+                <span id="card-unpaid" class="text-red-500 normal-case tracking-normal"></span>
+            </div>
             <div id="list-Credit Card" class="space-y-2 mb-6 text-sm text-gray-400 italic">No credit card records.</div>
 
             <div class="section-header">INCOME</div>
@@ -75,6 +78,17 @@
                         <input type="text" id="spender" placeholder="Who paid?" class="w-full p-3 rounded-xl ring-1 ring-gray-200">
                     </div>
                 </div>
+                <div id="status-group" class="hidden">
+                    <label class="block text-xs font-semibold text-gray-500 mb-1 tracking-wider">PAYMENT STATUS</label>
+                    <select id="status" class="w-full p-3 rounded-xl ring-1 ring-gray-200 bg-white">
+                        <option value="未還款">未還款 (Unpaid)</option>
+                        <option value="已還款">已還款 (Paid)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-500 mb-1 tracking-wider">NOTES</label>
+                    <input type="text" id="notes" placeholder="Optional" class="w-full p-3 rounded-xl ring-1 ring-gray-200">
+                </div>
                 <button type="submit" id="submit-btn" class="w-full bg-blue-600 text-white font-bold py-4 rounded-xl shadow-md mt-2">
                     Save Record
                 </button>
@@ -93,6 +107,28 @@
         const submitBtn = document.getElementById('submit-btn');
         const loadError = document.getElementById('load-error');
         const TYPES = ['Expense', 'Credit Card', 'Income'];
+        const UNPAID = '未還款';
+        const PAID = '已還款';
+        const typeSelect = document.getElementById('record-type');
+        const statusGroup = document.getElementById('status-group');
+        const categoryInput = document.getElementById('category');
+
+        // Status only applies to credit card bills
+        function syncTypeFields() {
+            const isCard = typeSelect.value === 'Credit Card';
+            statusGroup.classList.toggle('hidden', !isCard);
+            categoryInput.placeholder = isCard ? 'Card name, e.g. MOX' : 'e.g. Food';
+        }
+        typeSelect.addEventListener('change', syncTypeFields);
+
+        // Turn Supabase "missing column" errors into a clear setup hint
+        function friendlyError(err) {
+            const msg = (err && err.message) || String(err);
+            if (/column/i.test(msg) && /(status|notes)/i.test(msg)) {
+                return msg + '\n\nThe database is missing the new "status"/"notes" columns. Run supabase/add_status_and_notes.sql in the Supabase SQL editor.';
+            }
+            return msg;
+        }
 
         // Records currently shown, keyed by id (used by edit so we never put user text into inline JS)
         let recordsById = {};
@@ -114,6 +150,7 @@
             document.getElementById('edit-id').value = '';
             document.getElementById('modal-title').innerText = 'New Record';
             submitBtn.innerText = 'Save Record';
+            syncTypeFields();
         }
 
         function openModal() {
@@ -153,6 +190,7 @@
 
         function renderList(records) {
             let totalBalance = 0;
+            let unpaidTotal = 0;
             recordsById = {};
 
             TYPES.forEach(type => {
@@ -171,12 +209,22 @@
                     if (type === 'Income') totalBalance += amt;
                     else totalBalance -= amt;
 
+                    const isCard = type === 'Credit Card';
+                    const isPaid = item.status === PAID;
+                    if (isCard && !isPaid) unpaidTotal += amt;
+                    const statusBadge = isCard ? `
+                        <button type="button" data-action="toggle-status" data-id="${escapeHtml(item.id)}"
+                            class="ml-2 align-middle text-[10px] font-bold px-2 py-0.5 rounded-full ${isPaid ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}"
+                            title="Tap to mark as ${isPaid ? 'unpaid' : 'paid'}">${isPaid ? PAID : UNPAID}</button>` : '';
+                    const notesLine = item.notes ? `<p class="text-xs text-gray-500 truncate">${escapeHtml(item.notes)}</p>` : '';
+
                     const dateText = item.created_at ? new Date(item.created_at).toLocaleDateString() : '';
                     const div = document.createElement('div');
                     div.className = 'glass-card p-4 rounded-xl flex justify-between items-center shadow-sm mb-2';
                     div.innerHTML = `
                         <div class="flex-1 min-w-0">
-                            <p class="font-bold text-gray-800 truncate">${escapeHtml(item.category || 'General')}</p>
+                            <p class="font-bold text-gray-800 truncate">${escapeHtml(item.category || 'General')}${statusBadge}</p>
+                            ${notesLine}
                             <p class="text-[10px] text-gray-400 uppercase tracking-tight">${escapeHtml(dateText)} • ${escapeHtml(item.spender || 'Family')}</p>
                         </div>
                         <div class="text-right flex items-center gap-3">
@@ -191,6 +239,7 @@
                 });
             });
             totalDisplay.innerText = `HK$ ${totalBalance.toFixed(2)}`;
+            document.getElementById('card-unpaid').textContent = unpaidTotal > 0 ? `未還款 HK$ ${unpaidTotal.toFixed(2)}` : '';
         }
 
         // One listener for all edit / delete buttons
@@ -200,6 +249,7 @@
             const id = btn.dataset.id;
             if (btn.dataset.action === 'edit') editRecord(id);
             else if (btn.dataset.action === 'delete') deleteRecord(id);
+            else if (btn.dataset.action === 'toggle-status') toggleStatus(id, btn);
         });
 
         form.addEventListener('submit', async (e) => {
@@ -219,6 +269,13 @@
                 category: document.getElementById('category').value.trim(),
                 spender: document.getElementById('spender').value.trim()
             };
+            // Only send the new columns when they are used, so plain expenses/income
+            // still save even before the database migration has been run.
+            const original = id ? recordsById[id] : null;
+            const notes = document.getElementById('notes').value.trim();
+            if (payload.type === 'Credit Card') payload.status = document.getElementById('status').value;
+            else if (original && original.status) payload.status = null;
+            if (notes || (original && original.notes)) payload.notes = notes || null;
 
             const originalText = submitBtn.innerText;
             saving = true;
@@ -234,7 +291,7 @@
                 await fetchRecords();
             } catch (err) {
                 console.error('Failed to save record', err);
-                alert('Save failed: ' + (err.message || err) + '\nYour input has been kept, please try again.');
+                alert('Save failed: ' + friendlyError(err) + '\nYour input has been kept, please try again.');
                 submitBtn.innerText = originalText;
             } finally {
                 saving = false;
@@ -255,6 +312,21 @@
             fetchRecords();
         }
 
+        async function toggleStatus(id, btn) {
+            const item = recordsById[id];
+            if (!item) return;
+            const next = item.status === PAID ? UNPAID : PAID;
+            btn.disabled = true;
+            try {
+                const { error } = await supabaseClient.from('expenses').update({ status: next }).eq('id', id);
+                if (error) throw error;
+            } catch (err) {
+                console.error('Failed to update status', err);
+                alert('Update failed: ' + friendlyError(err));
+            }
+            fetchRecords();
+        }
+
         function editRecord(id) {
             const item = recordsById[id];
             if (!item) return;
@@ -266,6 +338,9 @@
             document.getElementById('amount').value = toAmount(item.amount);
             document.getElementById('category').value = item.category || '';
             document.getElementById('spender').value = item.spender || '';
+            document.getElementById('notes').value = item.notes || '';
+            document.getElementById('status').value = item.status === PAID ? PAID : UNPAID;
+            syncTypeFields();
             submitBtn.innerText = 'Update Record';
         }
 
