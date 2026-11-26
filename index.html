@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Family Expense Tracker</title>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { background-color: #f3f4f6; font-family: -apple-system, sans-serif; }
@@ -25,6 +25,7 @@
     <div class="max-w-2xl mx-auto px-4">
         <div id="expense-sections">
             <div class="section-header">EXPENSES</div>
+            <div id="load-error" class="hidden mb-4 p-3 rounded-xl bg-red-50 text-red-600 text-sm"></div>
             <div id="list-Expense" class="space-y-2 mb-6 text-sm text-gray-400 italic">No expense records.</div>
 
             <div class="section-header">CREDIT CARDS</div>
@@ -42,7 +43,7 @@
     </div>
 
     <div id="form-modal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-end sm:items-center justify-center p-4">
-        <div class="glass-card w-full max-w-md p-6 rounded-t-3xl sm:rounded-2xl shadow-2xl animate-slide-up">
+        <div class="glass-card w-full max-w-md p-6 rounded-t-3xl sm:rounded-2xl shadow-2xl">
             <div class="flex justify-between items-center mb-6">
                 <h2 id="modal-title" class="text-xl font-bold text-gray-800">New Record</h2>
                 <button onclick="toggleModal()" class="text-gray-400 text-2xl">&times;</button>
@@ -61,7 +62,7 @@
                     </div>
                     <div>
                         <label class="block text-xs font-semibold text-gray-500 mb-1 tracking-wider">AMOUNT (HKD)</label>
-                        <input type="number" id="amount" step="0.01" required placeholder="0.00" class="w-full p-3 rounded-xl ring-1 ring-gray-200">
+                        <input type="number" id="amount" step="0.01" min="0.01" inputmode="decimal" required placeholder="0.00" class="w-full p-3 rounded-xl ring-1 ring-gray-200">
                     </div>
                 </div>
                 <div class="grid grid-cols-2 gap-4">
@@ -89,52 +90,100 @@
         const form = document.getElementById('expense-form');
         const modal = document.getElementById('form-modal');
         const totalDisplay = document.getElementById('total-amount');
+        const submitBtn = document.getElementById('submit-btn');
+        const loadError = document.getElementById('load-error');
+        const TYPES = ['Expense', 'Credit Card', 'Income'];
+
+        // Records currently shown, keyed by id (used by edit so we never put user text into inline JS)
+        let recordsById = {};
+        let saving = false;
+
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, c => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[c]));
+        }
+
+        function toAmount(value) {
+            const n = parseFloat(value);
+            return Number.isFinite(n) ? n : 0;
+        }
+
+        function resetForm() {
+            form.reset();
+            document.getElementById('edit-id').value = '';
+            document.getElementById('modal-title').innerText = 'New Record';
+            submitBtn.innerText = 'Save Record';
+        }
+
+        function openModal() {
+            modal.classList.remove('hidden');
+        }
+
+        function closeModal() {
+            modal.classList.add('hidden');
+            resetForm();
+        }
 
         function toggleModal() {
-            modal.classList.toggle('hidden');
-            if(modal.classList.contains('hidden')) {
-                form.reset();
-                document.getElementById('edit-id').value = '';
-                document.getElementById('modal-title').innerText = 'New Record';
-            }
+            if (modal.classList.contains('hidden')) openModal();
+            else closeModal();
+        }
+
+        // Close when tapping the dark backdrop or pressing Escape
+        modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !modal.classList.contains('hidden')) closeModal(); });
+
+        function showLoadError(message) {
+            loadError.textContent = message;
+            loadError.classList.toggle('hidden', !message);
         }
 
         async function fetchRecords() {
-            const { data, error } = await supabaseClient.from('expenses').select('*').order('created_at', { ascending: false });
-            if (error) return;
-            renderList(data);
+            try {
+                const { data, error } = await supabaseClient.from('expenses').select('*').order('created_at', { ascending: false });
+                if (error) throw error;
+                showLoadError('');
+                renderList(data || []);
+            } catch (err) {
+                console.error('Failed to load records', err);
+                showLoadError('Could not load records: ' + (err.message || err) + '. Please try again later.');
+            }
         }
 
         function renderList(records) {
-            const types = ['Expense', 'Credit Card', 'Income'];
             let totalBalance = 0;
+            recordsById = {};
 
-            types.forEach(type => {
+            TYPES.forEach(type => {
                 const container = document.getElementById(`list-${type}`);
                 container.innerHTML = '';
-                const filtered = records.filter(r => r.type === type || (!r.type && type === 'Expense'));
-                
+                const filtered = records.filter(r => r.type === type || (!TYPES.includes(r.type) && type === 'Expense'));
+
                 if (filtered.length === 0) {
                     container.innerHTML = `<p class="italic text-gray-400">No ${type.toLowerCase()} records.</p>`;
+                    return;
                 }
 
                 filtered.forEach(item => {
-                    const amt = parseFloat(item.amount);
+                    recordsById[item.id] = item;
+                    const amt = toAmount(item.amount);
                     if (type === 'Income') totalBalance += amt;
                     else totalBalance -= amt;
 
+                    const dateText = item.created_at ? new Date(item.created_at).toLocaleDateString() : '';
                     const div = document.createElement('div');
                     div.className = 'glass-card p-4 rounded-xl flex justify-between items-center shadow-sm mb-2';
                     div.innerHTML = `
-                        <div class="flex-1">
-                            <p class="font-bold text-gray-800">${item.category || 'General'}</p>
-                            <p class="text-[10px] text-gray-400 uppercase tracking-tight">${new Date(item.created_at).toLocaleDateString()} • ${item.spender || 'Family'}</p>
+                        <div class="flex-1 min-w-0">
+                            <p class="font-bold text-gray-800 truncate">${escapeHtml(item.category || 'General')}</p>
+                            <p class="text-[10px] text-gray-400 uppercase tracking-tight">${escapeHtml(dateText)} • ${escapeHtml(item.spender || 'Family')}</p>
                         </div>
                         <div class="text-right flex items-center gap-3">
                             <p class="font-bold ${type === 'Income' ? 'text-green-600' : 'text-gray-800'}">HK$ ${amt.toFixed(2)}</p>
                             <div class="flex gap-1">
-                                <button onclick="editRecord('${item.id}', '${item.type}', ${amt}, '${item.category}', '${item.spender}')" class="p-2 text-blue-500">✎</button>
-                                <button onclick="deleteRecord('${item.id}')" class="p-2 text-red-400">✕</button>
+                                <button type="button" data-action="edit" data-id="${escapeHtml(item.id)}" class="p-2 text-blue-500" aria-label="Edit">✎</button>
+                                <button type="button" data-action="delete" data-id="${escapeHtml(item.id)}" class="p-2 text-red-400" aria-label="Delete">✕</button>
                             </div>
                         </div>
                     `;
@@ -144,40 +193,84 @@
             totalDisplay.innerText = `HK$ ${totalBalance.toFixed(2)}`;
         }
 
+        // One listener for all edit / delete buttons
+        document.getElementById('expense-sections').addEventListener('click', (e) => {
+            const btn = e.target.closest('button[data-action]');
+            if (!btn) return;
+            const id = btn.dataset.id;
+            if (btn.dataset.action === 'edit') editRecord(id);
+            else if (btn.dataset.action === 'delete') deleteRecord(id);
+        });
+
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
+            if (saving) return; // prevent double submit
+
             const id = document.getElementById('edit-id').value;
+            const amount = parseFloat(document.getElementById('amount').value);
+            if (!Number.isFinite(amount) || amount <= 0) {
+                alert('Please enter an amount greater than 0.');
+                return;
+            }
+
             const payload = {
-                amount: document.getElementById('amount').value,
+                amount: Math.round(amount * 100) / 100,
                 type: document.getElementById('record-type').value,
-                category: document.getElementById('category').value,
-                spender: document.getElementById('spender').value
+                category: document.getElementById('category').value.trim(),
+                spender: document.getElementById('spender').value.trim()
             };
 
-            if (id) await supabaseClient.from('expenses').update(payload).eq('id', id);
-            else await supabaseClient.from('expenses').insert([payload]);
+            const originalText = submitBtn.innerText;
+            saving = true;
+            submitBtn.disabled = true;
+            submitBtn.innerText = 'Saving...';
 
-            toggleModal();
-            fetchRecords();
+            try {
+                const { error } = id
+                    ? await supabaseClient.from('expenses').update(payload).eq('id', id)
+                    : await supabaseClient.from('expenses').insert([payload]);
+                if (error) throw error;
+                closeModal();
+                await fetchRecords();
+            } catch (err) {
+                console.error('Failed to save record', err);
+                alert('Save failed: ' + (err.message || err) + '\nYour input has been kept, please try again.');
+                submitBtn.innerText = originalText;
+            } finally {
+                saving = false;
+                submitBtn.disabled = false;
+                if (submitBtn.innerText === 'Saving...') submitBtn.innerText = 'Save Record';
+            }
         });
 
         async function deleteRecord(id) {
-            if (confirm('Delete this record?')) {
-                await supabaseClient.from('expenses').delete().eq('id', id);
-                fetchRecords();
+            if (!confirm('Delete this record?')) return;
+            try {
+                const { error } = await supabaseClient.from('expenses').delete().eq('id', id);
+                if (error) throw error;
+            } catch (err) {
+                console.error('Failed to delete record', err);
+                alert('Delete failed: ' + (err.message || err));
             }
+            fetchRecords();
         }
 
-        function editRecord(id, type, amount, category, spender) {
-            toggleModal();
+        function editRecord(id) {
+            const item = recordsById[id];
+            if (!item) return;
+            resetForm();
+            openModal();
             document.getElementById('modal-title').innerText = 'Edit Record';
-            document.getElementById('edit-id').value = id;
-            document.getElementById('record-type').value = type || 'Expense';
-            document.getElementById('amount').value = amount;
-            document.getElementById('category').value = category;
-            document.getElementById('spender').value = spender;
-            document.getElementById('submit-btn').innerText = 'Update Record';
+            document.getElementById('edit-id').value = item.id;
+            document.getElementById('record-type').value = TYPES.includes(item.type) ? item.type : 'Expense';
+            document.getElementById('amount').value = toAmount(item.amount);
+            document.getElementById('category').value = item.category || '';
+            document.getElementById('spender').value = item.spender || '';
+            submitBtn.innerText = 'Update Record';
         }
+
+        // Refresh when the user comes back to the app (e.g. another family member added a record)
+        document.addEventListener('visibilitychange', () => { if (!document.hidden) fetchRecords(); });
 
         fetchRecords();
     </script>
