@@ -17,14 +17,28 @@
 </head>
 <body class="pb-32">
 
-    <div class="bg-blue-600 text-white p-8 rounded-b-3xl shadow-lg mb-6 sticky top-0 z-10 text-center">
-        <h1 class="text-xs opacity-80 uppercase tracking-widest font-bold">Net Balance</h1>
+    <div class="bg-blue-600 text-white px-6 pt-5 pb-6 rounded-b-3xl shadow-lg mb-6 sticky top-0 z-10 text-center">
+        <div class="flex items-center justify-between max-w-md mx-auto">
+            <button type="button" id="prev-month" class="w-10 h-10 rounded-full bg-white/10 active:bg-white/20 text-xl" aria-label="Previous month">‹</button>
+            <button type="button" id="month-label" class="font-bold tracking-wide" title="Back to this month"></button>
+            <button type="button" id="next-month" class="w-10 h-10 rounded-full bg-white/10 active:bg-white/20 text-xl" aria-label="Next month">›</button>
+        </div>
+        <h1 class="text-xs opacity-80 uppercase tracking-widest font-bold mt-3">Net This Month</h1>
         <p id="total-amount" class="text-4xl font-bold mt-1 text-white">HK$ 0.00</p>
+        <div class="grid grid-cols-3 gap-2 mt-4 max-w-md mx-auto text-xs">
+            <div class="bg-white/10 rounded-xl py-2"><div class="opacity-80">Income</div><div id="sum-income" class="font-bold text-sm">0.00</div></div>
+            <div class="bg-white/10 rounded-xl py-2"><div class="opacity-80">Expenses</div><div id="sum-expense" class="font-bold text-sm">0.00</div></div>
+            <div class="bg-white/10 rounded-xl py-2"><div class="opacity-80">Cards</div><div id="sum-card" class="font-bold text-sm">0.00</div></div>
+        </div>
     </div>
 
     <div class="max-w-2xl mx-auto px-4">
         <div id="expense-sections">
             <div id="load-error" class="hidden mb-4 p-3 rounded-xl bg-red-50 text-red-600 text-sm"></div>
+            <div id="breakdown-block" class="hidden">
+                <div class="section-header">SPENDING BY CATEGORY</div>
+                <div id="breakdown" class="glass-card p-4 rounded-xl shadow-sm space-y-3 mb-6"></div>
+            </div>
             <div class="section-header">EXPENSES</div>
             <div id="list-Expense" class="space-y-2 mb-6 text-sm text-gray-400 italic">No expense records.</div>
 
@@ -78,6 +92,10 @@
                         <input type="text" id="spender" placeholder="Who paid?" class="w-full p-3 rounded-xl ring-1 ring-gray-200">
                     </div>
                 </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-500 mb-1 tracking-wider">DATE</label>
+                    <input type="date" id="record-date" required class="w-full p-3 rounded-xl ring-1 ring-gray-200 bg-white">
+                </div>
                 <div id="status-group" class="hidden">
                     <label class="block text-xs font-semibold text-gray-500 mb-1 tracking-wider">PAYMENT STATUS</label>
                     <select id="status" class="w-full p-3 rounded-xl ring-1 ring-gray-200 bg-white">
@@ -124,15 +142,59 @@
         // Turn Supabase "missing column" errors into a clear setup hint
         function friendlyError(err) {
             const msg = (err && err.message) || String(err);
+            if (/column/i.test(msg) && /record_date/i.test(msg)) {
+                return msg + '\n\nThe database is missing the new "record_date" column. Run supabase/add_record_date.sql in the Supabase SQL editor.';
+            }
             if (/column/i.test(msg) && /(status|notes)/i.test(msg)) {
                 return msg + '\n\nThe database is missing the new "status"/"notes" columns. Run supabase/add_status_and_notes.sql in the Supabase SQL editor.';
             }
             return msg;
         }
 
-        // Records currently shown, keyed by id (used by edit so we never put user text into inline JS)
+        // All records loaded from the database, keyed by id (used by edit so we never put user text into inline JS)
+        let allRecords = [];
         let recordsById = {};
         let saving = false;
+
+        // ---------- dates & months (all in the phone's local time) ----------
+        function pad2(n) { return String(n).padStart(2, '0'); }
+        function localDateStr(d) { return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; }
+        function todayStr() { return localDateStr(new Date()); }
+
+        // The day a record belongs to: record_date, or the day it was entered for older rows
+        function recordDate(item) {
+            if (item.record_date) return String(item.record_date).slice(0, 10);
+            if (item.created_at) return localDateStr(new Date(item.created_at));
+            return '';
+        }
+
+        function formatDate(dateStr) {
+            const [y, m, d] = dateStr.split('-').map(Number);
+            if (!y || !m || !d) return '';
+            return new Date(y, m - 1, d).toLocaleDateString();
+        }
+
+        function shiftMonth(monthKey, delta) {
+            const [y, m] = monthKey.split('-').map(Number);
+            const d = new Date(y, m - 1 + delta, 1);
+            return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
+        }
+
+        function monthLabel(monthKey) {
+            const [y, m] = monthKey.split('-').map(Number);
+            return `${y}年${m}月`;
+        }
+
+        const currentMonth = () => todayStr().slice(0, 7);
+        let selectedMonth = currentMonth();
+
+        function setMonth(monthKey) {
+            selectedMonth = monthKey;
+            render();
+        }
+        document.getElementById('prev-month').addEventListener('click', () => setMonth(shiftMonth(selectedMonth, -1)));
+        document.getElementById('next-month').addEventListener('click', () => setMonth(shiftMonth(selectedMonth, 1)));
+        document.getElementById('month-label').addEventListener('click', () => setMonth(currentMonth()));
 
         function escapeHtml(value) {
             return String(value ?? '').replace(/[&<>"']/g, c => ({
@@ -150,10 +212,12 @@
             document.getElementById('edit-id').value = '';
             document.getElementById('modal-title').innerText = 'New Record';
             submitBtn.innerText = 'Save Record';
+            document.getElementById('record-date').value = todayStr();
             syncTypeFields();
         }
 
         function openModal() {
+            if (!document.getElementById('edit-id').value) document.getElementById('record-date').value = todayStr();
             modal.classList.remove('hidden');
         }
 
@@ -181,54 +245,72 @@
                 const { data, error } = await supabaseClient.from('expenses').select('*').order('created_at', { ascending: false });
                 if (error) throw error;
                 showLoadError('');
-                renderList(data || []);
+                allRecords = data || [];
+                render();
             } catch (err) {
                 console.error('Failed to load records', err);
                 showLoadError('Could not load records: ' + (err.message || err) + '. Please try again later.');
             }
         }
 
-        function renderList(records) {
-            let totalBalance = 0;
-            let unpaidTotal = 0;
+        function money(n) {
+            return n.toLocaleString('en-HK', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        function render() {
             recordsById = {};
+            allRecords.forEach(r => { recordsById[r.id] = r; });
+
+            // Unpaid card bills carry over between months, so count them across all months
+            const unpaidTotal = allRecords
+                .filter(r => r.type === 'Credit Card' && r.status !== PAID)
+                .reduce((sum, r) => sum + toAmount(r.amount), 0);
+
+            // Newest first: by record date, then by entry time
+            const monthRecords = allRecords
+                .filter(r => recordDate(r).slice(0, 7) === selectedMonth)
+                .sort((a, b) => recordDate(b).localeCompare(recordDate(a)) ||
+                                String(b.created_at || '').localeCompare(String(a.created_at || '')));
+
+            const sums = { 'Expense': 0, 'Credit Card': 0, 'Income': 0 };
+            const byCategory = {};
 
             TYPES.forEach(type => {
                 const container = document.getElementById(`list-${type}`);
                 container.innerHTML = '';
-                const filtered = records.filter(r => r.type === type || (!TYPES.includes(r.type) && type === 'Expense'));
+                const filtered = monthRecords.filter(r => r.type === type || (!TYPES.includes(r.type) && type === 'Expense'));
 
                 if (filtered.length === 0) {
-                    container.innerHTML = `<p class="italic text-gray-400">No ${type.toLowerCase()} records.</p>`;
+                    container.innerHTML = `<p class="italic text-gray-400">No ${type.toLowerCase()} records this month.</p>`;
                     return;
                 }
 
                 filtered.forEach(item => {
-                    recordsById[item.id] = item;
                     const amt = toAmount(item.amount);
-                    if (type === 'Income') totalBalance += amt;
-                    else totalBalance -= amt;
+                    sums[type] += amt;
+                    if (type !== 'Income') {
+                        const cat = (item.category || '').trim() || 'General';
+                        byCategory[cat] = (byCategory[cat] || 0) + amt;
+                    }
 
                     const isCard = type === 'Credit Card';
                     const isPaid = item.status === PAID;
-                    if (isCard && !isPaid) unpaidTotal += amt;
                     const statusBadge = isCard ? `
                         <button type="button" data-action="toggle-status" data-id="${escapeHtml(item.id)}"
                             class="ml-2 align-middle text-[10px] font-bold px-2 py-0.5 rounded-full ${isPaid ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}"
                             title="Tap to mark as ${isPaid ? 'unpaid' : 'paid'}">${isPaid ? PAID : UNPAID}</button>` : '';
                     const notesLine = item.notes ? `<p class="text-xs text-gray-500 truncate">${escapeHtml(item.notes)}</p>` : '';
 
-                    const dateText = item.created_at ? new Date(item.created_at).toLocaleDateString() : '';
                     const div = document.createElement('div');
                     div.className = 'glass-card p-4 rounded-xl flex justify-between items-center shadow-sm mb-2';
                     div.innerHTML = `
                         <div class="flex-1 min-w-0">
                             <p class="font-bold text-gray-800 truncate">${escapeHtml(item.category || 'General')}${statusBadge}</p>
                             ${notesLine}
-                            <p class="text-[10px] text-gray-400 uppercase tracking-tight">${escapeHtml(dateText)} • ${escapeHtml(item.spender || 'Family')}</p>
+                            <p class="text-[10px] text-gray-400 uppercase tracking-tight">${escapeHtml(formatDate(recordDate(item)))} • ${escapeHtml(item.spender || 'Family')}</p>
                         </div>
                         <div class="text-right flex items-center gap-3">
-                            <p class="font-bold ${type === 'Income' ? 'text-green-600' : 'text-gray-800'}">HK$ ${amt.toFixed(2)}</p>
+                            <p class="font-bold ${type === 'Income' ? 'text-green-600' : 'text-gray-800'}">HK$ ${money(amt)}</p>
                             <div class="flex gap-1">
                                 <button type="button" data-action="edit" data-id="${escapeHtml(item.id)}" class="p-2 text-blue-500" aria-label="Edit">✎</button>
                                 <button type="button" data-action="delete" data-id="${escapeHtml(item.id)}" class="p-2 text-red-400" aria-label="Delete">✕</button>
@@ -238,8 +320,40 @@
                     container.appendChild(div);
                 });
             });
-            totalDisplay.innerText = `HK$ ${totalBalance.toFixed(2)}`;
-            document.getElementById('card-unpaid').textContent = unpaidTotal > 0 ? `未還款 HK$ ${unpaidTotal.toFixed(2)}` : '';
+
+            // Monthly summary in the header
+            const net = sums['Income'] - sums['Expense'] - sums['Credit Card'];
+            document.getElementById('month-label').textContent = monthLabel(selectedMonth);
+            totalDisplay.innerText = `${net < 0 ? '-' : ''}HK$ ${money(Math.abs(net))}`;
+            document.getElementById('sum-income').textContent = money(sums['Income']);
+            document.getElementById('sum-expense').textContent = money(sums['Expense']);
+            document.getElementById('sum-card').textContent = money(sums['Credit Card']);
+            document.getElementById('card-unpaid').textContent = unpaidTotal > 0 ? `全部未還款 HK$ ${money(unpaidTotal)}` : '';
+
+            renderBreakdown(byCategory);
+        }
+
+        // Spending (expenses + card bills) per category for the selected month
+        function renderBreakdown(byCategory) {
+            const block = document.getElementById('breakdown-block');
+            const box = document.getElementById('breakdown');
+            const entries = Object.entries(byCategory).sort((a, b) => b[1] - a[1]);
+            const total = entries.reduce((sum, [, v]) => sum + v, 0);
+            block.classList.toggle('hidden', total <= 0);
+            if (total <= 0) { box.innerHTML = ''; return; }
+
+            const max = entries[0][1];
+            box.innerHTML = entries.map(([cat, value]) => `
+                <div>
+                    <div class="flex justify-between text-sm mb-1">
+                        <span class="font-semibold text-gray-700 truncate pr-2">${escapeHtml(cat)}</span>
+                        <span class="text-gray-600 whitespace-nowrap">HK$ ${money(value)} <span class="text-gray-400 text-xs">${Math.round(value / total * 100)}%</span></span>
+                    </div>
+                    <div class="h-2 rounded-full bg-gray-100 overflow-hidden">
+                        <div class="h-full rounded-full bg-blue-500" style="width:${Math.max(2, value / max * 100).toFixed(1)}%"></div>
+                    </div>
+                </div>
+            `).join('');
         }
 
         // One listener for all edit / delete buttons
@@ -263,19 +377,21 @@
                 return;
             }
 
+            const recordDateValue = document.getElementById('record-date').value;
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(recordDateValue)) {
+                alert('Please choose a date.');
+                return;
+            }
+
             const payload = {
+                record_date: recordDateValue,
                 amount: Math.round(amount * 100) / 100,
                 type: document.getElementById('record-type').value,
                 category: document.getElementById('category').value.trim(),
                 spender: document.getElementById('spender').value.trim()
             };
-            // Only send the new columns when they are used, so plain expenses/income
-            // still save even before the database migration has been run.
-            const original = id ? recordsById[id] : null;
-            const notes = document.getElementById('notes').value.trim();
-            if (payload.type === 'Credit Card') payload.status = document.getElementById('status').value;
-            else if (original && original.status) payload.status = null;
-            if (notes || (original && original.notes)) payload.notes = notes || null;
+            payload.status = payload.type === 'Credit Card' ? document.getElementById('status').value : null;
+            payload.notes = document.getElementById('notes').value.trim() || null;
 
             const originalText = submitBtn.innerText;
             saving = true;
@@ -288,6 +404,7 @@
                     : await supabaseClient.from('expenses').insert([payload]);
                 if (error) throw error;
                 closeModal();
+                selectedMonth = recordDateValue.slice(0, 7); // show the month the record was saved to
                 await fetchRecords();
             } catch (err) {
                 console.error('Failed to save record', err);
@@ -339,6 +456,7 @@
             document.getElementById('category').value = item.category || '';
             document.getElementById('spender').value = item.spender || '';
             document.getElementById('notes').value = item.notes || '';
+            document.getElementById('record-date').value = recordDate(item) || todayStr();
             document.getElementById('status').value = item.status === PAID ? PAID : UNPAID;
             syncTypeFields();
             submitBtn.innerText = 'Update Record';
@@ -347,6 +465,7 @@
         // Refresh when the user comes back to the app (e.g. another family member added a record)
         document.addEventListener('visibilitychange', () => { if (!document.hidden) fetchRecords(); });
 
+        render();
         fetchRecords();
     </script>
 </body>
